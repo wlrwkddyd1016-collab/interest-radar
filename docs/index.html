@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관심사 레이더</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6f5f2; --card:#ffffff; --ink:#1b1b1f; --sub:#6b6b75; --line:#e6e4df;
+  --accent:#e5482f; --accent-soft:#fde8e3; --blue:#2f6fe5; --blue-soft:#e3ecfd;
+  --yt:#e5482f; --gg:#2f6fe5; --bar:#1b1b1f;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#121215; --card:#1c1c21; --ink:#f1f0ec; --sub:#9a9aa5; --line:#2c2c33;
+    --accent:#ff6a50; --accent-soft:#3a1f1a; --blue:#6f9cff; --blue-soft:#1a2440;
+    --yt:#ff6a50; --gg:#6f9cff; --bar:#f1f0ec;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121215; --card:#1c1c21; --ink:#f1f0ec; --sub:#9a9aa5; --line:#2c2c33;
+  --accent:#ff6a50; --accent-soft:#3a1f1a; --blue:#6f9cff; --blue-soft:#1a2440;
+  --yt:#ff6a50; --gg:#6f9cff; --bar:#f1f0ec;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans KR",system-ui,sans-serif;line-height:1.5}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 16px 64px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:20px}
+h1{font-size:28px;font-weight:800;margin:0;letter-spacing:-.02em}
+h1 span{color:var(--accent)}
+.meta{color:var(--sub);font-size:13px}
+select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.banner{background:var(--accent-soft);color:var(--ink);border-radius:10px;padding:10px 14px;font-size:14px;margin-bottom:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+.seg-grid{display:grid;grid-template-columns:64px repeat(6,1fr);gap:6px;align-items:center}
+.seg-grid .lab{font-size:13px;color:var(--sub);font-weight:500}
+.seg-btn{font:inherit;font-size:14px;padding:8px 4px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer}
+.seg-btn:hover{border-color:var(--sub)}
+.seg-btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.seg-all{grid-column:2/-1}
+.tabs{display:flex;gap:4px;margin:22px 0 12px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{font:inherit;font-size:15px;padding:10px 14px;border:0;background:none;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:700}
+.hint{font-size:13px;color:var(--sub);margin:0 0 12px}
+.cols{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;align-items:start}
+ol.rank{list-style:none;margin:0;padding:0}
+ol.rank li{display:grid;grid-template-columns:28px 1fr 120px 64px;gap:10px;align-items:center;padding:9px 6px;border-radius:8px;cursor:pointer}
+ol.rank li:hover,ol.rank li.on{background:var(--bg)}
+.n{font-weight:800;color:var(--sub);text-align:right;font-variant-numeric:tabular-nums}
+.kw{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.src{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;vertical-align:2px}
+.src.youtube{color:var(--yt);background:var(--accent-soft)}
+.src.google{color:var(--gg);background:var(--blue-soft)}
+.bar{height:8px;border-radius:4px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--bar);border-radius:4px}
+.val{text-align:right;font-variant-numeric:tabular-nums;font-size:14px;color:var(--sub)}
+.detail h3{margin:0 0 4px;font-size:20px}
+.detail .sub{color:var(--sub);font-size:13px;margin-bottom:14px}
+.mini{display:grid;grid-template-columns:44px repeat(6,1fr);gap:3px;font-size:12px}
+.mini div{text-align:center;padding:6px 0;border-radius:4px}
+.mini .h{color:var(--sub);background:none}
+.ex{margin-top:16px;display:flex;flex-direction:column;gap:8px}
+.ex a{display:flex;gap:10px;align-items:center;color:var(--ink);text-decoration:none;font-size:13px}
+.ex a:hover{text-decoration:underline}
+.ex img{width:96px;height:54px;object-fit:cover;border-radius:6px;flex:none}
+.btn{display:inline-block;margin-top:14px;font-size:14px;font-weight:700;color:var(--accent);text-decoration:none}
+.heat-wrap{overflow-x:auto}
+table.heat{border-collapse:separate;border-spacing:3px;font-size:13px;min-width:720px;width:100%}
+table.heat th{font-weight:500;color:var(--sub);padding:4px;white-space:nowrap}
+table.heat td{text-align:center;padding:7px 4px;border-radius:4px;font-variant-numeric:tabular-nums}
+table.heat td.k{text-align:left;font-weight:500;white-space:nowrap;padding-right:10px}
+.legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--sub);margin-top:10px}
+.legend .g{width:160px;height:10px;border-radius:5px}
+.spark{display:block;margin-top:6px}
+footer{margin-top:32px;font-size:12px;color:var(--sub)}
+footer p{margin:4px 0}
+@media (max-width:760px){
+  .cols{grid-template-columns:1fr}
+  .seg-grid{grid-template-columns:44px repeat(3,1fr)}
+  .seg-grid .lab{grid-row:span 2}
+  .seg-all{grid-column:1/-1}
+  ol.rank li{grid-template-columns:24px 1fr 70px 52px;gap:8px}
+  h1{font-size:23px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>관심사 <span>레이더</span></h1>
+      <div class="meta" id="meta">불러오는 중…</div>
+    </div>
+    <label class="meta">날짜 <select id="date"></select></label>
+  </header>
+  <div class="banner" id="demo" hidden>지금 보이는 건 <b>예시 데이터</b>예요. API 키를 넣고 실제 수집을 돌리면 진짜 데이터로 바뀝니다.</div>
+
+  <section class="card">
+    <div class="seg-grid" id="segs"></div>
+  </section>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab on" data-v="top">많이 찾는 것</button>
+    <button class="tab" data-v="aff">유독 더 찾는 것</button>
+    <button class="tab" data-v="heat">한눈에 보기</button>
+  </nav>
+  <p class="hint" id="hint"></p>
+
+  <div id="view"></div>
+
+  <footer>
+    <p>키워드: 유튜브 한국 인기 급상승 영상의 태그 + 구글 한국 급상승 검색어 · 연령·성별 비율: 네이버 데이터랩 검색어 트렌드</p>
+    <p>유튜브는 연령·성별별 검색 데이터를 공개하지 않아서, 연령·성별 비율은 같은 키워드의 네이버 검색량으로 대신 계산합니다. 관심도는 기준어 "<span id="anchor">날씨</span>" 검색량을 1로 둔 상대값입니다.</p>
+  </footer>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const AGES = [["10","10대"],["20","20대"],["30","30대"],["40","40대"],["50","50대"],["60","60대+"]];
+const GENDERS = [["m","남성"],["f","여성"]];
+const state = { data:null, seg:"all", view:"top", kw:null };
+const store = { get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}} };
+state.seg = store.get("seg") || "all";
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const score = (seg, k) => state.data.scores[seg]?.[k];
+const aff = (seg, k) => { const a = score(seg,k), b = score("all",k); return (a!=null && b) ? a/b : null; };
+
+// 전체 대비 배율 → 색 (낮음=파랑, 높음=주황)
+function heatColor(r){
+  if(r==null) return "transparent";
+  const t = Math.max(-1, Math.min(1, Math.log2(r)/1.5));
+  const css = getComputedStyle(document.documentElement);
+  const col = t >= 0 ? css.getPropertyValue("--accent") : css.getPropertyValue("--blue");
+  return `color-mix(in srgb, ${col.trim()} ${Math.round(Math.abs(t)*85)}%, transparent)`;
+}
+const fmtX = r => r==null ? "–" : (r>=10 ? r.toFixed(0) : r.toFixed(1)) + "배";
+
+async function loadIndex(){
+  const idx = await fetch("data/index.json?" + Date.now()).then(r => r.json());
+  $("#date").innerHTML = idx.dates.map(d => `<option>${d}</option>`).join("");
+  $("#date").onchange = e => loadDay(e.target.value);
+  await loadDay(idx.latest);
+}
+async function loadDay(d){
+  state.data = await fetch(`data/${d}.json`).then(r => r.json());
+  state.kw = null;
+  const D = state.data;
+  $("#meta").textContent = `검색 기간 ${D.period.start} ~ ${D.period.end} · 업데이트 ${D.generated_at.replace("T"," ").slice(0,16)} · 키워드 ${D.keywords.length}개`;
+  $("#demo").hidden = !D.demo;
+  $("#anchor").textContent = D.anchor;
+  renderSegs(); render();
+}
+
+function renderSegs(){
+  let h = `<div></div><button class="seg-btn seg-all ${state.seg==="all"?"on":""}" data-s="all">전체</button>`;
+  for(const [g,gl] of GENDERS){
+    h += `<div class="lab">${gl}</div>`;
+    for(const [a,al] of AGES) h += `<button class="seg-btn ${state.seg===g+a?"on":""}" data-s="${g+a}">${al}</button>`;
+  }
+  $("#segs").innerHTML = h;
+  $("#segs").querySelectorAll("[data-s]").forEach(b => b.onclick = () => {
+    state.seg = b.dataset.s; store.set("seg", state.seg); state.kw = null; renderSegs(); render();
+  });
+}
+
+function segLabel(id){ return state.data.segments.find(s => s.id===id)?.label || id; }
+
+function ranked(){
+  const D = state.data, seg = state.seg;
+  let rows = D.keywords.map(k => ({...k, s:score(seg,k.keyword), r:aff(seg,k.keyword)})).filter(k => k.s!=null && k.s>0);
+  if(state.view==="aff" && seg!=="all"){
+    const top = Math.max(...rows.map(k => k.s));
+    rows = rows.filter(k => k.s >= top*0.03).sort((a,b) => b.r-a.r); // 검색량이 너무 적은 키워드는 제외
+  } else rows.sort((a,b) => b.s-a.s);
+  return rows;
+}
+
+function render(){
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.v===state.view));
+  const seg = state.seg, lab = segLabel(seg);
+  if(state.view==="heat") return renderHeat();
+  if(state.view==="aff" && seg==="all"){
+    $("#hint").textContent = "위에서 연령·성별을 하나 고르면, 그 층이 다른 사람들보다 유독 많이 찾는 키워드를 보여줍니다.";
+    $("#view").innerHTML = ""; return;
+  }
+  $("#hint").textContent = state.view==="top"
+    ? `${lab}이(가) 이번 주 가장 많이 검색한 키워드 순위 (가장 높은 키워드 = 100)`
+    : `${lab}이(가) 전체 평균보다 몇 배 더 찾는지 순위. 이 층의 진짜 취향이 보이는 곳이에요.`;
+  const rows = ranked().slice(0, 30);
+  const max = Math.max(...rows.map(k => state.view==="top" ? k.s : k.r));
+  if(!state.kw || !rows.find(r => r.keyword===state.kw)) state.kw = rows[0]?.keyword;
+  const list = rows.map((k,i) => {
+    const v = state.view==="top" ? k.s : k.r;
+    const txt = state.view==="top" ? Math.round(k.s/max*100) : fmtX(k.r);
+    return `<li data-k="${esc(k.keyword)}" class="${k.keyword===state.kw?"on":""}">
+      <span class="n">${i+1}</span>
+      <span class="kw">${esc(k.keyword)}<span class="src ${k.source}">${k.source==="youtube"?"유튜브":"구글"}</span></span>
+      <span class="bar"><i style="width:${(v/max*100).toFixed(1)}%"></i></span>
+      <span class="val">${txt}</span></li>`;
+  }).join("");
+  $("#view").innerHTML = `<div class="cols"><section class="card"><ol class="rank">${list}</ol></section><aside class="card detail" id="detail"></aside></div>`;
+  $("#view").querySelectorAll("li").forEach(li => li.onclick = () => {
+    state.kw = li.dataset.k;
+    $("#view").querySelectorAll("li").forEach(x => x.classList.toggle("on", x===li));
+    renderDetail();
+  });
+  renderDetail();
+}
+
+function sparkSvg(pts){
+  if(!pts || pts.length<2) return "";
+  const w=240,h=40,mx=Math.max(...pts)||1;
+  const d = pts.map((p,i) => `${(i/(pts.length-1)*w).toFixed(1)},${(h-2-p/mx*(h-6)).toFixed(1)}`).join(" ");
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${d}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+
+function renderDetail(){
+  const el = $("#detail"); if(!el) return;
+  const k = state.data.keywords.find(x => x.keyword===state.kw);
+  if(!k){ el.innerHTML = ""; return; }
+  let grid = `<div class="h"></div>` + AGES.map(a => `<div class="h">${a[1]}</div>`).join("");
+  for(const [g,gl] of GENDERS){
+    grid += `<div class="h">${gl}</div>`;
+    for(const [a] of AGES){ const r = aff(g+a, k.keyword); grid += `<div style="background:${heatColor(r)}">${fmtX(r)}</div>`; }
+  }
+  const ex = (k.examples||[]).map(e => `<a href="${esc(e.url)}" target="_blank" rel="noopener">${e.thumb?`<img src="${esc(e.thumb)}" alt="" loading="lazy">`:""}<span>${esc(e.title)}</span></a>`).join("");
+  const extra = k.source==="google" && k.traffic ? ` · 구글 검색 ${esc(k.traffic)}` : k.channels ? ` · 인기 영상 채널 ${k.channels}곳에서 사용` : "";
+  el.innerHTML = `<h3>${esc(k.keyword)}</h3>
+    <div class="sub">${k.source==="youtube"?"유튜브 인기 영상 태그":"구글 급상승 검색어"}${extra}</div>
+    <div class="mini">${grid}</div>
+    <div class="legend">전체 평균 대비 · 파랑 = 덜 찾음, 주황 = 더 찾음</div>
+    <div class="sub" style="margin:14px 0 0">최근 7일 검색 흐름</div>${sparkSvg(k.spark)}
+    ${ex?`<div class="ex">${ex}</div>`:""}
+    <a class="btn" href="https://www.youtube.com/results?search_query=${encodeURIComponent(k.keyword)}" target="_blank" rel="noopener">유튜브에서 검색해보기 →</a>`;
+}
+
+function renderHeat(){
+  $("#hint").textContent = "키워드마다 어느 연령·성별이 더 많이 찾는지 한 번에 비교 (전체 평균 = 1배). 칸을 누르면 그 층 순위로 이동합니다.";
+  const rows = state.data.keywords.map(k => ({...k, s:score("all",k.keyword)})).filter(k => k.s).sort((a,b) => b.s-a.s).slice(0,25);
+  let head = `<tr><th></th>` + GENDERS.map(([g,gl]) => AGES.map(([a,al]) => `<th>${al}<br>${gl}</th>`).join("")).join("") + `</tr>`;
+  const body = rows.map(k => `<tr><td class="k">${esc(k.keyword)}</td>` + GENDERS.map(([g]) => AGES.map(([a]) => {
+    const r = aff(g+a, k.keyword); return `<td data-s="${g+a}" data-k="${esc(k.keyword)}" style="background:${heatColor(r)};cursor:pointer">${fmtX(r)}</td>`;
+  }).join("")).join("") + `</tr>`).join("");
+  $("#view").innerHTML = `<section class="card"><div class="heat-wrap"><table class="heat">${head}${body}</table></div>
+    <div class="legend">덜 찾음 <span class="g" style="background:linear-gradient(90deg,var(--blue),transparent,var(--accent))"></span> 더 찾음</div></section>`;
+  $("#view").querySelectorAll("td[data-s]").forEach(td => td.onclick = () => {
+    state.seg = td.dataset.s; state.view = "top"; state.kw = td.dataset.k; store.set("seg", state.seg); renderSegs(); render();
+  });
+}
+
+$("#tabs").querySelectorAll(".tab").forEach(t => t.onclick = () => { state.view = t.dataset.v; render(); });
+loadIndex().catch(e => { $("#meta").textContent = "데이터를 불러오지 못했어요. collect.py 를 먼저 실행하세요."; console.error(e); });
+</script>
+</body>
+</html>
