@@ -21,14 +21,16 @@
 
 ## 설정 방법 (처음 한 번만, 약 15분)
 
-### 1. 네이버 API 키 받기 (필수, 무료)
-1. https://developers.naver.com/apps/#/register 에 접속합니다.
-2. 애플리케이션 이름은 아무거나 입력합니다.
-3. 사용 API에서 **데이터랩(검색어트렌드)** 을 선택합니다.
-4. 환경은 **WEB 설정**을 고르고 URL에 `http://localhost`를 입력합니다.
-5. 등록하면 나오는 **Client ID**와 **Client Secret**을 적어둡니다.
+### 1. 네이버 API 키 받기 (필수)
+2026년 7월 31일부터 데이터랩 API는 네이버 개발자센터가 아니라 **네이버 클라우드 플랫폼의 NAVER API HUB**에서 신청합니다.
+1. https://console.ncloud.com 에 로그인합니다. 가입과 결제수단 등록은 직접 해야 합니다.
+2. 왼쪽 위 **Menu → All Services → Application Services → NAVER API HUB**로 들어갑니다.
+3. 왼쪽 메뉴에서 **Application**을 누르고 **[Application 등록]**을 누릅니다.
+4. API 목록에서 **검색어 트렌드**를 체크하고 **[다음]**을 누릅니다. 이름은 아무거나 입력하고 **[완료]**를 누릅니다.
+5. 만든 Application을 선택하고 **API 관리 → [인증 정보]**를 누르면 나오는 **Client ID**와 **Client Secret**을 적어둡니다.
 
-하루 1,000회까지 무료이고, 이 프로그램은 하루 약 130회를 씁니다.
+이 프로그램은 하루 약 130회를 호출합니다. 요금과 무료 한도는 https://www.ncloud.com/product/applicationService/NAVER%20API%20HUB 에서 확인하세요.
+2026년 7월 31일 이전에 개발자센터에서 받은 키가 있다면, 환경변수 `NAVER_API=legacy`를 추가해 그 키를 그대로 쓸 수 있습니다.
 
 ### 2. 유튜브 API 키 받기 (권장, 무료)
 1. https://console.cloud.google.com/ 에서 새 프로젝트를 만듭니다.

@@ -193,8 +193,11 @@ def naver_scores(keywords: list[str], seg: dict, start: str, end: str, cid: str,
         body["gender"] = seg["gender"]
     if seg["ages"]:
         body["ages"] = seg["ages"]
-    res = json.loads(http("https://openapi.naver.com/v1/datalab/search", body,
-                          {"X-Naver-Client-Id": cid, "X-Naver-Client-Secret": secret}))
+    if os.environ.get("NAVER_API", "hub") == "legacy":  # 2026-07-31 이전에 개발자센터에서 받은 키
+        url, hdrs = "https://openapi.naver.com/v1/datalab/search", {"X-Naver-Client-Id": cid, "X-Naver-Client-Secret": secret}
+    else:  # NAVER API HUB (네이버 클라우드 플랫폼)
+        url, hdrs = "https://naverapihub.apigw.ntruss.com/search-trend/v1/search", {"X-NCP-APIGW-API-KEY-ID": cid, "X-NCP-APIGW-API-KEY": secret}
+    res = json.loads(http(url, body, hdrs))
     sums, series = {}, {}
     for r in res.get("results", []):
         pts = [p["ratio"] for p in r.get("data", [])]
