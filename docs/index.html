@@ -40,6 +40,12 @@ select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:
 .seg-btn:hover{border-color:var(--sub)}
 .seg-btn.on{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
 .seg-all{grid-column:2/-1}
+.topics{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.chip{font:inherit;font-size:14px;padding:6px 14px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);cursor:pointer}
+.chip:hover{border-color:var(--sub)}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.tp{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);margin-right:4px}
+.src.topic{color:var(--ink);background:var(--line)}
 .tabs{display:flex;gap:4px;margin:22px 0 12px;border-bottom:1px solid var(--line);overflow-x:auto}
 .tab{font:inherit;font-size:15px;padding:10px 14px;border:0;background:none;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
 .tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:700}
@@ -100,6 +106,7 @@ footer p{margin:4px 0}
   <section class="card">
     <div class="seg-grid" id="segs"></div>
   </section>
+  <div class="topics" id="topics"></div>
 
   <nav class="tabs" id="tabs">
     <button class="tab on" data-v="top">많이 찾는 것</button>
@@ -111,7 +118,7 @@ footer p{margin:4px 0}
   <div id="view"></div>
 
   <footer>
-    <p>키워드: 유튜브 한국 인기 급상승 영상의 태그 + 구글 한국 급상승 검색어 · 연령·성별 비율: 네이버 데이터랩 검색어 트렌드</p>
+    <p>키워드: 주제어(정치·이슈·투자·주식·코인·부자·돈) + 주제어로 검색한 최근 7일 유튜브 인기 영상의 태그 + 주제에 맞는 구글 한국 급상승 검색어 · 연령·성별 비율: 네이버 데이터랩 검색어 트렌드</p>
     <p>유튜브는 연령·성별별 검색 데이터를 공개하지 않아서, 연령·성별 비율은 같은 키워드의 네이버 검색량으로 대신 계산합니다. 관심도는 기준어 "<span id="anchor">날씨</span>" 검색량을 1로 둔 상대값입니다.</p>
   </footer>
 </div>
@@ -120,9 +127,12 @@ footer p{margin:4px 0}
 const $ = s => document.querySelector(s);
 const AGES = [["10","10대"],["20","20대"],["30","30대"],["40","40대"],["50","50대"],["60","60대+"]];
 const GENDERS = [["m","남성"],["f","여성"]];
-const state = { data:null, seg:"all", view:"top", kw:null };
+const state = { data:null, seg:"all", view:"top", kw:null, topic:"전체" };
 const store = { get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}} };
 state.seg = store.get("seg") || "all";
+state.topic = store.get("topic") || "전체";
+const kwList = () => state.data.keywords.filter(k => state.topic==="전체" || (k.topics||[]).includes(state.topic));
+const SRC = {youtube:"유튜브", google:"구글", topic:"주제어"};
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const score = (seg, k) => state.data.scores[seg]?.[k];
@@ -151,7 +161,14 @@ async function loadDay(d){
   $("#meta").textContent = `검색 기간 ${D.period.start} ~ ${D.period.end} · 업데이트 ${D.generated_at.replace("T"," ").slice(0,16)} · 키워드 ${D.keywords.length}개`;
   $("#demo").hidden = !D.demo;
   $("#anchor").textContent = D.anchor;
-  renderSegs(); render();
+  renderTopics(); renderSegs(); render();
+}
+
+function renderTopics(){
+  const T = ["전체", ...(state.data.topics || [])];
+  if(!T.includes(state.topic)) state.topic = "전체";
+  $("#topics").innerHTML = T.map(t => `<button class="chip ${t===state.topic?"on":""}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  $("#topics").querySelectorAll(".chip").forEach(b => b.onclick = () => { state.topic = b.dataset.t; store.set("topic", state.topic); state.kw = null; renderTopics(); render(); });
 }
 
 function renderSegs(){
@@ -170,7 +187,7 @@ function segLabel(id){ return state.data.segments.find(s => s.id===id)?.label ||
 
 function ranked(){
   const D = state.data, seg = state.seg;
-  let rows = D.keywords.map(k => ({...k, s:score(seg,k.keyword), r:aff(seg,k.keyword)})).filter(k => k.s!=null && k.s>0);
+  let rows = kwList().map(k => ({...k, s:score(seg,k.keyword), r:aff(seg,k.keyword)})).filter(k => k.s!=null && k.s>0);
   if(state.view==="aff" && seg!=="all"){
     const top = Math.max(...rows.map(k => k.s));
     rows = rows.filter(k => k.s >= top*0.03).sort((a,b) => b.r-a.r); // 검색량이 너무 적은 키워드는 제외
@@ -190,6 +207,7 @@ function render(){
     ? `${lab}이(가) 이번 주 가장 많이 검색한 키워드 순위 (가장 높은 키워드 = 100)`
     : `${lab}이(가) 전체 평균보다 몇 배 더 찾는지 순위. 이 층의 진짜 취향이 보이는 곳이에요.`;
   const rows = ranked().slice(0, 30);
+  if(!rows.length){ $("#view").innerHTML = `<section class="card hint">이 주제에는 오늘 수집된 키워드가 없어요.</section>`; return; }
   const max = Math.max(...rows.map(k => state.view==="top" ? k.s : k.r));
   if(!state.kw || !rows.find(r => r.keyword===state.kw)) state.kw = rows[0]?.keyword;
   const list = rows.map((k,i) => {
@@ -197,7 +215,7 @@ function render(){
     const txt = state.view==="top" ? Math.round(k.s/max*100) : fmtX(k.r);
     return `<li data-k="${esc(k.keyword)}" class="${k.keyword===state.kw?"on":""}">
       <span class="n">${i+1}</span>
-      <span class="kw">${esc(k.keyword)}<span class="src ${k.source}">${k.source==="youtube"?"유튜브":"구글"}</span></span>
+      <span class="kw">${esc(k.keyword)}<span class="src ${k.source}">${SRC[k.source]||k.source}</span></span>
       <span class="bar"><i style="width:${(v/max*100).toFixed(1)}%"></i></span>
       <span class="val">${txt}</span></li>`;
   }).join("");
@@ -227,9 +245,10 @@ function renderDetail(){
     for(const [a] of AGES){ const r = aff(g+a, k.keyword); grid += `<div style="background:${heatColor(r)}">${fmtX(r)}</div>`; }
   }
   const ex = (k.examples||[]).map(e => `<a href="${esc(e.url)}" target="_blank" rel="noopener">${e.thumb?`<img src="${esc(e.thumb)}" alt="" loading="lazy">`:""}<span>${esc(e.title)}</span></a>`).join("");
+  const tps = (k.topics||[]).map(t => `<span class="tp">${esc(t)}</span>`).join("");
   const extra = k.source==="google" && k.traffic ? ` · 구글 검색 ${esc(k.traffic)}` : k.channels ? ` · 인기 영상 채널 ${k.channels}곳에서 사용` : "";
   el.innerHTML = `<h3>${esc(k.keyword)}</h3>
-    <div class="sub">${k.source==="youtube"?"유튜브 인기 영상 태그":"구글 급상승 검색어"}${extra}</div>
+    <div class="sub">${tps}${{youtube:"유튜브 인기 영상 태그",google:"구글 급상승 검색어",topic:"주제어"}[k.source]||""}${extra}</div>
     <div class="mini">${grid}</div>
     <div class="legend">전체 평균 대비 · 파랑 = 덜 찾음, 주황 = 더 찾음</div>
     <div class="sub" style="margin:14px 0 0">최근 7일 검색 흐름</div>${sparkSvg(k.spark)}
@@ -239,7 +258,7 @@ function renderDetail(){
 
 function renderHeat(){
   $("#hint").textContent = "키워드마다 어느 연령·성별이 더 많이 찾는지 한 번에 비교 (전체 평균 = 1배). 칸을 누르면 그 층 순위로 이동합니다.";
-  const rows = state.data.keywords.map(k => ({...k, s:score("all",k.keyword)})).filter(k => k.s).sort((a,b) => b.s-a.s).slice(0,25);
+  const rows = kwList().map(k => ({...k, s:score("all",k.keyword)})).filter(k => k.s).sort((a,b) => b.s-a.s).slice(0,25);
   let head = `<tr><th></th>` + GENDERS.map(([g,gl]) => AGES.map(([a,al]) => `<th>${al}<br>${gl}</th>`).join("")).join("") + `</tr>`;
   const body = rows.map(k => `<tr><td class="k">${esc(k.keyword)}</td>` + GENDERS.map(([g]) => AGES.map(([a]) => {
     const r = aff(g+a, k.keyword); return `<td data-s="${g+a}" data-k="${esc(k.keyword)}" style="background:${heatColor(r)};cursor:pointer">${fmtX(r)}</td>`;

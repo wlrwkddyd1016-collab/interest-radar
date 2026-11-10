@@ -25,9 +25,30 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "docs" / "data"
 KST = dt.timezone(dt.timedelta(hours=9))
 
-MAX_KEYWORDS = int(os.environ.get("MAX_KEYWORDS", "40"))
-TREND_LIMIT = 15  # 구글 급상승 검색어에서 최대 몇 개를 쓸지
+MAX_KEYWORDS = int(os.environ.get("MAX_KEYWORDS", "45"))
+PER_TOPIC = 5  # 주제마다 유튜브에서 뽑을 키워드 수
 DAYS = 7  # 최근 며칠 검색량으로 비교할지
+
+# 추적할 주제. 주제어 자체도 항상 키워드로 들어간다.
+TOPICS = [t.strip() for t in os.environ.get("TOPICS", "정치,이슈,투자,주식,코인,부자,돈").split(",") if t.strip()]
+
+# 유튜브 검색에 쓸 실제 검색어 ("|" = 또는). 없으면 주제어 그대로 검색
+TOPIC_QUERY = {
+    "코인": "코인|비트코인|암호화폐|알트코인",
+    "돈": "돈버는법|돈 모으는법|월급|재테크|부업",
+    "부자": "부자|부자되는법|자산가",
+}
+
+# 구글 급상승 검색어 중 주제에 맞는 것만 고르기 위한 단어 (제목이나 관련 기사 제목에 들어 있으면 해당 주제)
+TOPIC_VOCAB = {
+    "정치": ["정치", "대통령", "국회", "의원", "정당", "민주당", "국민의힘", "선거", "장관", "총리", "탄핵", "정부", "대선", "총선", "검찰", "특검"],
+    "이슈": ["이슈", "논란", "속보", "사건", "사고", "폭로", "의혹"],
+    "투자": ["투자", "재테크", "금리", "환율", "부동산", "아파트", "채권", "금값", "etf", "펀드"],
+    "주식": ["주식", "주가", "증시", "코스피", "코스닥", "나스닥", "다우", "상장", "실적", "배당", "공모주", "급등", "급락", "시가총액"],
+    "코인": ["코인", "비트코인", "이더리움", "리플", "도지코인", "가상자산", "암호화폐", "업비트", "빗썸", "알트코인"],
+    "부자": ["부자", "재벌", "억만장자", "자산가", "회장"],
+    "돈": ["돈버는", "돈 버는", "연봉", "월급", "로또", "세금", "연금", "대출", "적금", "용돈", "지원금", "부업"],
+}
 
 # 네이버 데이터랩 연령 코드: 2=13~18, 3=19~24, 4=25~29, 5=30~34 ... 11=60+
 AGE_GROUPS = [
@@ -51,9 +72,12 @@ STOPWORDS = {
     "korea", "korean", "한국", "브이로그", "vlog", "music", "mv", "official", "live", "라이브",
     "fyp", "추천", "인기", "영상", "동영상", "kpop", "k-pop", "subscribe", "구독", "highlight", "하이라이트",
     "reaction", "리액션", "광고", "ad", "news", "뉴스", "game", "게임", "gaming", "asmr", "먹방",
+    # 방송사·뉴스 프로그램 이름은 관심사가 아니므로 제외
+    "sbs", "kbs", "mbc", "jtbc", "ytn", "mbn", "tv조선", "채널a", "연합뉴스", "연합뉴스tv", "뉴스데스크", "8뉴스",
+    "sbs뉴스", "kbs뉴스", "mbc뉴스", "jtbc뉴스", "ytn뉴스", "속보", "단독", "시사", "뉴스룸", "뉴스9", "newsroom",
+    "실시간뉴스", "뉴스실시간", "상황극", "ai드라마", "드라마", "웃긴영상", "랭킹", "정보", "꿀팁", "동기부여",
+    "경제", "economy", "money", "finance", "stock", "stocks", "crypto", "investing", "invest",
 }
-
-YT_CATEGORIES = [None, "10", "17", "20", "22", "24", "25", "26", "28"]  # 전체, 음악, 스포츠, 게임, 인물, 엔터, 뉴스, 노하우, 과학기술
 
 
 def load_env() -> None:
@@ -90,8 +114,13 @@ def norm(s: str) -> str:
 
 
 # ---------------------------------------------------------------- 수집
+def topics_of(*texts: str) -> list[str]:
+    t = " ".join(texts).lower()
+    return [tp for tp in TOPICS if any(w in t for w in TOPIC_VOCAB.get(tp, [tp]))]
+
+
 def fetch_google_trends() -> list[dict]:
-    """구글 트렌드 한국 일간 급상승 검색어 (API 키 불필요)."""
+    """구글 트렌드 한국 일간 급상승 검색어 중 주제에 맞는 것만 (API 키 불필요)."""
     raw = http("https://trends.google.com/trending/rss?geo=KR")
     root = ET.fromstring(raw)
     ns = {"ht": "https://trends.google.com/trending/rss"}
@@ -100,54 +129,42 @@ def fetch_google_trends() -> list[dict]:
         title = (item.findtext("title") or "").strip()
         if not title:
             continue
-        news = item.find("ht:news_item", ns)
-        ex = []
-        if news is not None:
-            ex.append({
-                "title": news.findtext("ht:news_item_title", default="", namespaces=ns),
-                "url": news.findtext("ht:news_item_url", default="", namespaces=ns),
-            })
-        out.append({
-            "keyword": title,
-            "source": "google",
-            "traffic": item.findtext("ht:approx_traffic", default="", namespaces=ns),
-            "examples": ex,
-        })
+        news = item.findall("ht:news_item", ns)
+        heads = [n.findtext("ht:news_item_title", default="", namespaces=ns) for n in news]
+        tps = topics_of(title, *heads)
+        if not tps:
+            continue
+        ex = [{"title": heads[0], "url": news[0].findtext("ht:news_item_url", default="", namespaces=ns)}] if news else []
+        out.append({"keyword": title, "source": "google", "topics": tps,
+                    "traffic": item.findtext("ht:approx_traffic", default="", namespaces=ns), "examples": ex})
     return out
 
 
-def fetch_youtube_popular(api_key: str) -> list[dict]:
-    """유튜브 한국 인기 급상승 영상 (카테고리별)."""
-    videos: dict[str, dict] = {}
-    for cat in YT_CATEGORIES:
-        q = {"part": "snippet,statistics", "chart": "mostPopular", "regionCode": "KR",
-             "maxResults": "50", "key": api_key}
-        if cat:
-            q["videoCategoryId"] = cat
-        try:
-            res = json.loads(http("https://www.googleapis.com/youtube/v3/videos?" + urllib.parse.urlencode(q)))
-        except urllib.error.HTTPError as e:
-            if cat is None:
-                raise
-            print(f"  카테고리 {cat} 건너뜀 ({e.code})")
-            continue
-        for v in res.get("items", []):
-            s = v["snippet"]
-            videos.setdefault(v["id"], {
-                "id": v["id"],
-                "title": s.get("title", ""),
-                "channel": s.get("channelTitle", ""),
-                "tags": s.get("tags", []),
-                "views": int(v.get("statistics", {}).get("viewCount", 0) or 0),
-                "thumb": s.get("thumbnails", {}).get("medium", {}).get("url", ""),
-            })
-    return list(videos.values())
+def fetch_youtube_topic(api_key: str, topic: str) -> list[dict]:
+    """주제어로 최근 7일 한국 유튜브 영상을 조회수 순으로 검색 (검색 1회 = 할당량 100, 하루 10,000 중)."""
+    after = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    q = {"part": "snippet", "q": TOPIC_QUERY.get(topic, topic), "type": "video", "regionCode": "KR", "relevanceLanguage": "ko",
+         "order": "viewCount", "publishedAfter": after, "maxResults": "50", "key": api_key}
+    res = json.loads(http("https://www.googleapis.com/youtube/v3/search?" + urllib.parse.urlencode(q)))
+    ids = [it["id"]["videoId"] for it in res.get("items", []) if it.get("id", {}).get("videoId")]
+    if not ids:
+        return []
+    q = {"part": "snippet,statistics", "id": ",".join(ids), "key": api_key}
+    res = json.loads(http("https://www.googleapis.com/youtube/v3/videos?" + urllib.parse.urlencode(q)))
+    out = []
+    for v in res.get("items", []):
+        s = v["snippet"]
+        out.append({"id": v["id"], "topic": topic, "title": s.get("title", ""), "channel": s.get("channelTitle", ""),
+                    "tags": s.get("tags", []), "views": int(v.get("statistics", {}).get("viewCount", 0) or 0),
+                    "thumb": s.get("thumbnails", {}).get("medium", {}).get("url", "")})
+    return out
 
 
 def keywords_from_videos(videos: list[dict]) -> list[dict]:
     """여러 채널에서 공통으로 쓰인 태그·해시태그를 인기 키워드로 본다."""
     channels: dict[str, set] = defaultdict(set)
     views: dict[str, int] = defaultdict(int)
+    by_topic: dict[str, dict] = defaultdict(lambda: defaultdict(set))  # 키워드 → 주제 → 채널들
     display: dict[str, str] = {}
     examples: dict[str, list] = defaultdict(list)
     for v in videos:
@@ -161,24 +178,45 @@ def keywords_from_videos(videos: list[dict]) -> list[dict]:
             seen.add(k)
             channels[k].add(v["channel"])
             views[k] += v["views"]
+            if v.get("topic"):
+                by_topic[k][v["topic"]].add(v["channel"])
             display.setdefault(k, t)
-            if len(examples[k]) < 3:
+            if len(examples[k]) < 3 and all(e["url"] != f"https://youtu.be/{v['id']}" for e in examples[k]):
                 examples[k].append({"title": v["title"], "url": f"https://youtu.be/{v['id']}", "thumb": v["thumb"]})
     ranked = sorted(channels, key=lambda k: (len(channels[k]), views[k]), reverse=True)
-    return [{"keyword": display[k], "source": "youtube", "channels": len(channels[k]),
-             "views": views[k], "examples": examples[k]} for k in ranked]
+    out = []
+    for k in ranked:
+        tc = {t: len(c) for t, c in by_topic[k].items()}
+        top = max(tc.values(), default=0)
+        # 그 주제 검색 결과에서 2개 채널 이상, 그리고 가장 강한 주제의 절반 이상일 때만 그 주제로 본다
+        tps = [t for t in TOPICS if tc.get(t, 0) >= 2 and tc.get(t, 0) >= top * 0.5]
+        out.append({"keyword": display[k], "source": "youtube", "topics": tps, "tcount": tc,
+                    "channels": len(channels[k]), "views": views[k], "examples": examples[k]})
+    return out
 
 
 def pick_keywords(trends: list[dict], yt: list[dict], anchor: str) -> list[dict]:
+    """주제어 7개 → 주제별 유튜브 상위 태그 → 주제에 맞는 구글 급상승 검색어 순으로 채운다."""
     out, seen = [], {norm(anchor)}
-    for kw in trends[:TREND_LIMIT] + yt:
+
+    def add(kw: dict) -> None:
         k = norm(kw["keyword"])
-        if k in seen:
-            continue
-        seen.add(k)
-        out.append(kw)
-        if len(out) >= MAX_KEYWORDS:
-            break
+        if k not in seen and len(out) < MAX_KEYWORDS:
+            seen.add(k)
+            out.append(kw)
+
+    for t in TOPICS:
+        add({"keyword": t, "source": "topic", "topics": [t], "examples": []})
+    for t in TOPICS:  # 주제마다 고르게
+        cands = sorted((k for k in yt if t in k["topics"] and norm(k["keyword"]) not in seen),
+                       key=lambda k: -k["tcount"][t])
+        for kw in cands[:PER_TOPIC]:
+            add(kw)
+    for kw in trends:
+        add(kw)
+    for kw in yt:  # 자리가 남으면 주제가 있는 나머지로 채움
+        if kw["topics"]:
+            add(kw)
     return out
 
 
@@ -221,14 +259,18 @@ def collect_real(today: dt.date) -> dict:
     except Exception as e:  # noqa: BLE001
         print(f"  실패: {e}")
         trends = []
-    print(f"  {len(trends)}개")
+    print(f"  주제에 맞는 것 {len(trends)}개")
 
     yt = []
     if yt_key:
-        print("유튜브 인기 영상 수집…")
-        videos = fetch_youtube_popular(yt_key)
+        print(f"유튜브 주제 검색: {', '.join(TOPICS)}")
+        videos = []
+        for t in TOPICS:
+            vs = fetch_youtube_topic(yt_key, t)
+            print(f"  {t}: 영상 {len(vs)}개")
+            videos += vs
         yt = keywords_from_videos(videos)
-        print(f"  영상 {len(videos)}개 → 키워드 후보 {len(yt)}개")
+        print(f"  키워드 후보 {len(yt)}개")
     else:
         print("YOUTUBE_API_KEY 없음 → 구글 급상승 검색어만 사용")
 
@@ -257,7 +299,7 @@ def collect_real(today: dt.date) -> dict:
 
     for k in kws:
         k["spark"] = spark.get(k["keyword"], [])
-    return {"period": {"start": s, "end": e}, "anchor": anchor, "demo": False,
+    return {"period": {"start": s, "end": e}, "anchor": anchor, "demo": False, "topics": TOPICS,
             "keywords": kws, "scores": scores}
 
 
@@ -265,23 +307,21 @@ def collect_demo(today: dt.date) -> dict:
     """API 키 없이 화면을 확인하기 위한 가짜 데이터."""
     rng = random.Random(today.toordinal())
     sample = [
-        ("롤드컵", "youtube", {"m": 2.5, "10": 2, "20": 2}), ("아이돌 컴백", "youtube", {"f": 2.4, "10": 2.2, "20": 1.6}),
-        ("주식", "google", {"m": 1.5, "30": 1.5, "40": 1.8, "50": 1.6}), ("비트코인", "google", {"m": 1.8, "30": 1.4, "40": 1.6}),
-        ("다이어트 식단", "youtube", {"f": 2, "20": 1.6, "30": 1.6}), ("캠핑", "youtube", {"m": 1.3, "30": 1.5, "40": 1.7}),
-        ("트로트", "youtube", {"50": 2.2, "60": 3, "f": 1.3}), ("건강검진", "google", {"50": 2, "60": 2.4}),
-        ("메이플스토리", "youtube", {"m": 2.2, "10": 2.5, "20": 1.8}), ("올리브영 세일", "google", {"f": 2.8, "10": 1.6, "20": 2}),
-        ("육아 꿀팁", "youtube", {"f": 2, "30": 2.4}), ("부동산 전망", "google", {"40": 1.8, "50": 2, "m": 1.3}),
-        ("야구 하이라이트", "youtube", {"m": 2, "30": 1.3, "40": 1.4}), ("드라마 결말", "google", {"f": 1.8, "40": 1.4, "50": 1.5}),
-        ("수능", "google", {"10": 3.5}), ("자취 요리", "youtube", {"20": 2.2}), ("골프 레슨", "youtube", {"m": 1.6, "40": 1.6, "50": 1.8}),
-        ("넷플릭스 신작", "youtube", {"20": 1.5, "30": 1.4}), ("연금", "google", {"50": 2.2, "60": 2.2}),
-        ("패션 하울", "youtube", {"f": 2.6, "20": 1.8}), ("자동차 리뷰", "youtube", {"m": 2.3, "30": 1.5, "40": 1.4}),
-        ("여행 브이로그", "youtube", {"f": 1.4, "20": 1.4, "30": 1.3}), ("탕후루", "google", {"10": 2.4, "f": 1.4}),
-        ("AI 활용법", "youtube", {"20": 1.4, "30": 1.6, "40": 1.3}),
+        ("정치", "topic", ["정치"], {"m": 1.6, "50": 1.8, "60": 2}), ("이슈", "topic", ["이슈"], {"20": 1.3, "30": 1.3}),
+        ("투자", "topic", ["투자"], {"m": 1.4, "30": 1.6, "40": 1.5}), ("주식", "topic", ["주식"], {"m": 1.5, "40": 1.8, "50": 1.6}),
+        ("코인", "topic", ["코인"], {"m": 2, "20": 1.8, "30": 1.6}), ("부자", "topic", ["부자"], {"20": 1.4, "10": 1.3}),
+        ("돈", "topic", ["돈"], {"10": 1.5, "20": 1.4}), ("국정감사", "youtube", ["정치"], {"m": 1.5, "50": 2, "60": 2.2}),
+        ("엔비디아", "youtube", ["주식", "투자"], {"m": 1.8, "30": 1.6, "40": 1.5}), ("비트코인", "youtube", ["코인"], {"m": 2.2, "20": 1.6, "30": 1.6}),
+        ("리플", "youtube", ["코인"], {"m": 1.9, "40": 1.8, "50": 1.5}), ("코스피", "google", ["주식"], {"m": 1.5, "40": 1.6, "50": 1.8}),
+        ("배당주", "youtube", ["주식", "투자"], {"50": 2, "60": 2.2}), ("부동산 전망", "youtube", ["투자"], {"40": 1.8, "50": 2}),
+        ("연금", "google", ["돈"], {"50": 2.2, "60": 2.2}), ("부업", "youtube", ["돈"], {"f": 1.5, "20": 1.8, "30": 1.7}),
+        ("재테크", "youtube", ["투자", "돈"], {"f": 1.6, "20": 1.6, "30": 1.8}), ("젊은 부자", "youtube", ["부자"], {"20": 2, "10": 1.6}),
+        ("연봉", "youtube", ["돈"], {"20": 2, "30": 1.6}), ("논란", "youtube", ["이슈"], {"f": 1.4, "10": 1.6, "20": 1.5}),
     ]
     kws, scores = [], {seg["id"]: {} for seg in SEGMENTS}
-    for name, src, bias in sample:
+    for name, src, tps, bias in sample:
         base = rng.uniform(0.2, 3.0)
-        kws.append({"keyword": name, "source": src, "examples": [],
+        kws.append({"keyword": name, "source": src, "topics": tps, "examples": [],
                     "spark": [round(rng.uniform(40, 100), 1) for _ in range(DAYS)]})
         tot = 0
         for seg in SEGMENTS[1:]:
@@ -291,7 +331,7 @@ def collect_demo(today: dt.date) -> dict:
         scores["all"][name] = round(tot / 12, 4)
     end = today - dt.timedelta(days=1)
     return {"period": {"start": (end - dt.timedelta(days=DAYS - 1)).isoformat(), "end": end.isoformat()},
-            "anchor": "날씨", "demo": True, "keywords": kws, "scores": scores}
+            "anchor": "날씨", "demo": True, "topics": TOPICS, "keywords": kws, "scores": scores}
 
 
 def main() -> None:
