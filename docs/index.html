@@ -46,6 +46,15 @@ select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:
 .chip.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .tp{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);margin-right:4px}
 .src.topic{color:var(--ink);background:var(--line)}
+.src.search{color:#0f8a5f;background:color-mix(in srgb,#0f8a5f 14%,transparent)}
+.sq{margin-top:20px}
+.sq h2{font-size:18px;margin:0 0 4px}
+.sq h4{font-size:14px;margin:16px 0 8px}
+.sq .list{display:flex;flex-wrap:wrap;gap:6px}
+.sq .w{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.sq .w.a{border-color:var(--ink);font-weight:700;cursor:pointer}
+.sq .w a{color:inherit;text-decoration:none}
+.sq .more{font:inherit;font-size:13px;border:0;background:none;color:var(--accent);cursor:pointer;padding:4px 6px}
 .tabs{display:flex;gap:4px;margin:22px 0 12px;border-bottom:1px solid var(--line);overflow-x:auto}
 .tab{font:inherit;font-size:15px;padding:10px 14px;border:0;background:none;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
 .tab.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:700}
@@ -116,10 +125,11 @@ footer p{margin:4px 0}
   <p class="hint" id="hint"></p>
 
   <div id="view"></div>
+  <section class="card sq" id="searches" hidden></section>
 
   <footer>
-    <p>키워드: 주제어(정치·이슈·투자·주식·코인·부자·돈) + 주제어로 검색한 최근 7일 유튜브 인기 영상의 태그 + 주제에 맞는 구글 한국 급상승 검색어 · 연령·성별 비율: 네이버 데이터랩 검색어 트렌드</p>
-    <p>유튜브는 연령·성별별 검색 데이터를 공개하지 않아서, 연령·성별 비율은 같은 키워드의 네이버 검색량으로 대신 계산합니다. 관심도는 기준어 "<span id="anchor">날씨</span>" 검색량을 1로 둔 상대값입니다.</p>
+    <p>키워드: 주제어(정치·이슈·투자·주식·코인·부자·돈) + 유튜브 검색창 자동완성 검색어 + 주제어로 검색한 최근 7일 유튜브 인기 영상의 태그 + 주제에 맞는 구글 한국 급상승 검색어 · 연령·성별 비율: 네이버 데이터랩 검색어 트렌드</p>
+    <p>유튜브는 연령·성별별 검색 데이터를 공개하지 않아서, 연령·성별 비율은 같은 키워드의 네이버 검색량으로 대신 계산합니다. 관심도는 기준어 "<span id="anchor">우산</span>" 검색량을 1로 둔 상대값입니다.</p>
   </footer>
 </div>
 
@@ -132,7 +142,7 @@ const store = { get(k){try{return localStorage.getItem(k)}catch(e){return null}}
 state.seg = store.get("seg") || "all";
 state.topic = store.get("topic") || "전체";
 const kwList = () => state.data.keywords.filter(k => state.topic==="전체" || (k.topics||[]).includes(state.topic));
-const SRC = {youtube:"유튜브", google:"구글", topic:"주제어"};
+const SRC = {youtube:"영상태그", google:"구글", topic:"주제어", search:"검색어"};
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const score = (seg, k) => state.data.scores[seg]?.[k];
@@ -195,7 +205,32 @@ function ranked(){
   return rows;
 }
 
+const expanded = new Set();
+function renderSearches(){
+  const el = $("#searches"), S = state.data.searches;
+  if(!S){ el.hidden = true; return; }
+  el.hidden = false;
+  const analyzed = new Set(state.data.keywords.map(k => k.keyword));
+  const T = state.topic==="전체" ? Object.keys(S) : [state.topic];
+  const total = T.reduce((n,t) => n + (S[t]||[]).length, 0);
+  el.innerHTML = `<h2>유튜브에서 실제로 치는 검색어</h2>
+    <p class="hint">유튜브 검색창 자동완성에 뜨는 말 ${total}개 · 많이 뜨는 순서 · <b>굵은 것</b>은 연령·성별 분석에 들어간 검색어 (누르면 위에서 보여줌), 나머지는 누르면 유튜브 검색</p>` +
+    T.map(t => {
+      const all = S[t]||[], open = expanded.has(t) || T.length===1, list = open ? all : all.slice(0,20);
+      return `<h4>${esc(t)} <span class="meta">${all.length}개</span></h4><div class="list">` +
+        list.map(q => analyzed.has(q)
+          ? `<span class="w a" data-q="${esc(q)}">${esc(q)}</span>`
+          : `<span class="w"><a href="https://www.youtube.com/results?search_query=${encodeURIComponent(q)}" target="_blank" rel="noopener">${esc(q)}</a></span>`).join("") +
+        (!open && all.length>20 ? `<button class="more" data-t="${esc(t)}">+ ${all.length-20}개 더 보기</button>` : "") + `</div>`;
+    }).join("");
+  el.querySelectorAll(".more").forEach(b => b.onclick = () => { expanded.add(b.dataset.t); renderSearches(); });
+  el.querySelectorAll(".w.a").forEach(w => w.onclick = () => {
+    state.kw = w.dataset.q; if(state.view!=="top"){ state.view="top"; } render(); $("#view").scrollIntoView({behavior:"smooth"});
+  });
+}
+
 function render(){
+  renderSearches();
   document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.v===state.view));
   const seg = state.seg, lab = segLabel(seg);
   if(state.view==="heat") return renderHeat();
@@ -248,7 +283,7 @@ function renderDetail(){
   const tps = (k.topics||[]).map(t => `<span class="tp">${esc(t)}</span>`).join("");
   const extra = k.source==="google" && k.traffic ? ` · 구글 검색 ${esc(k.traffic)}` : k.channels ? ` · 인기 영상 채널 ${k.channels}곳에서 사용` : "";
   el.innerHTML = `<h3>${esc(k.keyword)}</h3>
-    <div class="sub">${tps}${{youtube:"유튜브 인기 영상 태그",google:"구글 급상승 검색어",topic:"주제어"}[k.source]||""}${extra}</div>
+    <div class="sub">${tps}${{youtube:"유튜브 인기 영상 태그",google:"구글 급상승 검색어",topic:"주제어",search:"유튜브 자동완성 검색어"}[k.source]||""}${extra}</div>
     <div class="mini">${grid}</div>
     <div class="legend">전체 평균 대비 · 파랑 = 덜 찾음, 주황 = 더 찾음</div>
     <div class="sub" style="margin:14px 0 0">최근 7일 검색 흐름</div>${sparkSvg(k.spark)}

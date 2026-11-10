@@ -25,12 +25,27 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "docs" / "data"
 KST = dt.timezone(dt.timedelta(hours=9))
 
-MAX_KEYWORDS = int(os.environ.get("MAX_KEYWORDS", "45"))
-PER_TOPIC = 5  # 주제마다 유튜브에서 뽑을 키워드 수
+MAX_KEYWORDS = int(os.environ.get("MAX_KEYWORDS", "110"))  # 네이버로 연령·성별을 분석할 최대 개수
+PER_TOPIC = 4  # 주제마다 유튜브 영상 태그에서 뽑을 키워드 수
+PER_TOPIC_SEARCH = int(os.environ.get("PER_TOPIC_SEARCH", "10"))  # 주제마다 자동완성 검색어에서 분석할 개수
 DAYS = 7  # 최근 며칠 검색량으로 비교할지
 
 # 추적할 주제. 주제어 자체도 항상 키워드로 들어간다.
 TOPICS = [t.strip() for t in os.environ.get("TOPICS", "정치,이슈,투자,주식,코인,부자,돈").split(",") if t.strip()]
+
+# 유튜브 자동완성을 받아올 출발 검색어 (사람들이 실제로 치는 "부자되는법", "돈 버는법 부업" 같은 말을 모은다)
+TOPIC_SEEDS = {
+    "정치": ["정치", "대통령", "국회", "민주당", "국민의힘", "선거"],
+    "이슈": ["이슈", "논란", "사건", "오늘 뉴스", "연예계 이슈", "사회 이슈"],
+    "투자": ["투자", "투자 방법", "재테크", "etf", "부동산 투자", "금 투자"],
+    "주식": ["주식", "주식 추천", "미국주식", "주식 초보", "배당주", "주식 전망"],
+    "코인": ["코인", "비트코인", "코인 추천", "알트코인", "리플", "이더리움"],
+    "부자": ["부자", "부자되는법", "부자 습관", "부자 마인드", "부자 되는", "부자들"],
+    "돈": ["돈 버는법", "돈 모으는법", "부업", "월급", "돈버는 앱", "짠테크"],
+}
+# 자동완성에 섞여 나오는 게임 등 엉뚱한 검색어를 거르는 단어
+SEARCH_BLOCK = ["게임", "피파", "fc온라인", "동물의 숲", "동숲", "로블록스", "마크", "마인크래프트", "메이플", "입양하세요",
+                "브롤", "쿠키런", "포켓몬", "시네니건", "배그", "롤 ", "gta", "스타듀", "심즈", "커비", "젤다", "원신", "찬양", "성경", "주님", "ccm"]
 
 # 유튜브 검색에 쓸 실제 검색어 ("|" = 또는). 없으면 주제어 그대로 검색
 TOPIC_QUERY = {
@@ -75,7 +90,7 @@ STOPWORDS = {
     # 방송사·뉴스 프로그램 이름은 관심사가 아니므로 제외
     "sbs", "kbs", "mbc", "jtbc", "ytn", "mbn", "tv조선", "채널a", "연합뉴스", "연합뉴스tv", "뉴스데스크", "8뉴스",
     "sbs뉴스", "kbs뉴스", "mbc뉴스", "jtbc뉴스", "ytn뉴스", "속보", "단독", "시사", "뉴스룸", "뉴스9", "newsroom",
-    "실시간뉴스", "뉴스실시간", "상황극", "ai드라마", "드라마", "웃긴영상", "랭킹", "정보", "꿀팁", "동기부여",
+    "실시간뉴스", "뉴스실시간", "인터뷰", "개그맨", "아빠", "엄마", "가족", "일상", "리뷰", "토크", "다큐", "다큐멘터리", "인생", "예능", "개그", "코미디", "웃긴", "레전드", "상황극", "ai드라마", "드라마", "웃긴영상", "랭킹", "정보", "꿀팁", "동기부여",
     "경제", "economy", "money", "finance", "stock", "stocks", "crypto", "investing", "invest",
 }
 
@@ -114,6 +129,47 @@ def norm(s: str) -> str:
 
 
 # ---------------------------------------------------------------- 수집
+def youtube_suggest(q: str) -> list[str]:
+    """유튜브 검색창 자동완성 (API 키 불필요, 할당량 없음)."""
+    u = "https://suggestqueries.google.com/complete/search?" + urllib.parse.urlencode(
+        {"client": "firefox", "ds": "yt", "hl": "ko", "gl": "kr", "q": q})
+    raw = http(u)
+    for enc in ("utf-8", "cp949"):
+        try:
+            return json.loads(raw.decode(enc))[1]
+        except (UnicodeDecodeError, ValueError, IndexError):
+            continue
+    return []
+
+
+def fetch_searches() -> dict[str, list[str]]:
+    """주제별로 유튜브 자동완성 검색어를 모아 많이 나온 순으로 정렬."""
+    out = {}
+    for t in TOPICS:
+        seeds = TOPIC_SEEDS.get(t, [t])
+        core = [norm(x) for x in seeds + TOPIC_VOCAB.get(t, [])] + [norm(t)]
+        score: dict[str, float] = defaultdict(float)
+        disp: dict[str, str] = {}
+        for seed in seeds:
+            for q in (seed, seed + " "):
+                try:
+                    sugg = youtube_suggest(q)
+                except Exception as e:  # noqa: BLE001
+                    print(f"  자동완성 실패 {q}: {e}")
+                    continue
+                for i, sg in enumerate(sugg):
+                    k = norm(sg)
+                    low = sg.lower()
+                    if (any(b in low for b in SEARCH_BLOCK) or len(k) < 2
+                            or not any(c.split()[0] in k for c in core if c)):
+                        continue
+                    score[k] += 10 - i
+                    disp.setdefault(k, sg.strip())
+                time.sleep(0.1)
+        out[t] = [disp[k] for k in sorted(score, key=lambda k: -score[k])]
+    return out
+
+
 def topics_of(*texts: str) -> list[str]:
     t = " ".join(texts).lower()
     return [tp for tp in TOPICS if any(w in t for w in TOPIC_VOCAB.get(tp, [tp]))]
@@ -195,8 +251,8 @@ def keywords_from_videos(videos: list[dict]) -> list[dict]:
     return out
 
 
-def pick_keywords(trends: list[dict], yt: list[dict], anchor: str) -> list[dict]:
-    """주제어 7개 → 주제별 유튜브 상위 태그 → 주제에 맞는 구글 급상승 검색어 순으로 채운다."""
+def pick_keywords(trends: list[dict], yt: list[dict], anchor: str, searches: dict | None = None) -> list[dict]:
+    """주제어 → 주제별 자동완성 검색어 → 주제별 유튜브 상위 태그 → 주제에 맞는 구글 급상승 검색어 순으로 채운다."""
     out, seen = [], {norm(anchor)}
 
     def add(kw: dict) -> None:
@@ -207,6 +263,9 @@ def pick_keywords(trends: list[dict], yt: list[dict], anchor: str) -> list[dict]
 
     for t in TOPICS:
         add({"keyword": t, "source": "topic", "topics": [t], "examples": []})
+    for t in TOPICS:
+        for q in (searches or {}).get(t, [])[:PER_TOPIC_SEARCH]:
+            add({"keyword": q, "source": "search", "topics": [t], "examples": []})
     for t in TOPICS:  # 주제마다 고르게
         cands = sorted((k for k in yt if t in k["topics"] and norm(k["keyword"]) not in seen),
                        key=lambda k: -k["tcount"][t])
@@ -249,7 +308,7 @@ def naver_scores(keywords: list[str], seg: dict, start: str, end: str, cid: str,
 def collect_real(today: dt.date) -> dict:
     cid, secret = os.environ.get("NAVER_CLIENT_ID"), os.environ.get("NAVER_CLIENT_SECRET")
     yt_key = os.environ.get("YOUTUBE_API_KEY")
-    anchor = os.environ.get("ANCHOR_KEYWORD", "날씨")
+    anchor = os.environ.get("ANCHOR_KEYWORD", "우산")
     if not (cid and secret):
         sys.exit("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 가 없습니다. README 의 설정 방법을 보세요. (키 없이 보려면 --demo)")
 
@@ -274,14 +333,32 @@ def collect_real(today: dt.date) -> dict:
     else:
         print("YOUTUBE_API_KEY 없음 → 구글 급상승 검색어만 사용")
 
-    kws = pick_keywords(trends, yt, anchor)
-    if not kws:
-        sys.exit("키워드를 하나도 모으지 못했습니다.")
-    names = [k["keyword"] for k in kws]
+    print("유튜브 자동완성 검색어 수집…")
+    searches = fetch_searches()
+    print("  " + ", ".join(f"{t} {len(v)}개" for t, v in searches.items()))
 
     end = today - dt.timedelta(days=1)
     start = end - dt.timedelta(days=DAYS - 1)
     s, e = start.isoformat(), end.isoformat()
+
+    # 유튜브에서만 쓰이는 긴 검색어는 네이버 검색량이 0인 경우가 많아, 주제마다 상위 30개를 먼저 걸러본다
+    print("검색어 네이버 검색량 확인…")
+    screened = {}
+    for t, qs in searches.items():
+        cand = [q for q in qs[:30] if norm(q) != norm(anchor)]
+        vol = {}
+        for i in range(0, len(cand), 4):
+            sc, _ = naver_scores(cand[i:i + 4], SEGMENTS[0], s, e, cid, secret, anchor)
+            vol.update(sc)
+            time.sleep(0.15)
+        screened[t] = [q for q in cand if (vol.get(q) or 0) > 0]
+    print("  " + ", ".join(f"{t} {len(v)}개" for t, v in screened.items()))
+
+    kws = pick_keywords(trends, yt, anchor, screened)
+    if not kws:
+        sys.exit("키워드를 하나도 모으지 못했습니다.")
+    names = [k["keyword"] for k in kws]
+
     print(f"네이버 데이터랩 조회 {s} ~ {e}, 키워드 {len(names)}개 × 그룹 {len(SEGMENTS)}개")
 
     scores: dict[str, dict] = {}
@@ -299,7 +376,7 @@ def collect_real(today: dt.date) -> dict:
 
     for k in kws:
         k["spark"] = spark.get(k["keyword"], [])
-    return {"period": {"start": s, "end": e}, "anchor": anchor, "demo": False, "topics": TOPICS,
+    return {"period": {"start": s, "end": e}, "anchor": anchor, "demo": False, "topics": TOPICS, "searches": searches,
             "keywords": kws, "scores": scores}
 
 
@@ -331,7 +408,7 @@ def collect_demo(today: dt.date) -> dict:
         scores["all"][name] = round(tot / 12, 4)
     end = today - dt.timedelta(days=1)
     return {"period": {"start": (end - dt.timedelta(days=DAYS - 1)).isoformat(), "end": end.isoformat()},
-            "anchor": "날씨", "demo": True, "topics": TOPICS, "keywords": kws, "scores": scores}
+            "anchor": "우산", "demo": True, "topics": TOPICS, "keywords": kws, "scores": scores}
 
 
 def main() -> None:
